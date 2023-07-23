@@ -1,12 +1,12 @@
-﻿using ChessChallenge.API;
-using System.Diagnostics;
+﻿using System;
+using ChessChallenge.API;
 
 static class RandomExtensions
 {
-    public static void Shuffle<T> (this System.Random rng, T[] array)
+    public static void Shuffle<T>(this System.Random rng, T[] array)
     {
         int n = array.Length;
-        while (n > 1) 
+        while (n > 1)
         {
             int k = rng.Next(n--);
             T temp = array[n];
@@ -19,7 +19,7 @@ static class RandomExtensions
 public class MyBot : IChessBot
 {
 
-    int[] pieceRewards = {
+    readonly int[] pieceRewards = {
         0, // NULL
         100, // pawn
         300, // knight
@@ -29,74 +29,63 @@ public class MyBot : IChessBot
         1000, // king
     };
 
-    int I = 0;
+    int moveNr = 0;
 
     public Move Think(Board board, Timer timer)
     {
         Move[] moves = board.GetLegalMoves();
-        System.Random random = new();
-        Move topMove = moves[random.Next(moves.Length)];
-        int topMoveScore = -9999;
-        foreach (Move move in moves)
+        (int score, int moveNr) result = MiniMax(board, moves, 3, true);
+        if (result.moveNr < 0)
         {
-            board.MakeMove(move);
-            int score = MiniMax(board, timer, 2, false);
-            // Check if mate
-            if (board.IsInCheckmate())
-            {
-                score *= 1000; // Avoid/play always
-            };
-            Debug.WriteLine($"{I}.xx - score {score} : {move.ToString()}");
-            // int score = evaluateBoard(board);
-            board.UndoMove(move);
-            if (score >= topMoveScore)
-            {
-                topMoveScore = score;
-                topMove = move;
-            }
+            result.moveNr = 0;
         }
-        Debug.WriteLine($"{I++} - Best move score {topMoveScore}");
-        return topMove;
+
+        // Console.WriteLine($"-----> [{moveNr++}] - score : {result.score}");
+
+        return moves[result.moveNr];
     }
 
-    int MiniMax(Board board, Timer timer, int depth, bool isPlayer)
+    (int score, int moveNr) MiniMax(Board board, Move[] moves, int depth, bool maximizing)
     {
+        int topScore = (maximizing) ? -9999 : 9999;
+        int topMove = -1;
+
         if (depth == 0)
         {
-            return evaluateBoard(board);
+            topScore = EvaluateBoard(board, maximizing);
         }
-
-        Move[] moves = board.GetLegalMoves();
-        System.Random random = new();
-        random.Shuffle(moves);
-        int topMoveScore = (isPlayer) ? -9999 : 9999;
-
-        if (moves.Length == 0)
+        else
         {
-            return topMoveScore;
-        }
+            Random random = new();
+            random.Shuffle(moves);
 
-        foreach (Move move in moves)
-        {
-            board.MakeMove(move);
-            int score = MiniMax(board, timer, depth - 1, !isPlayer);
-            board.UndoMove(move);
-            if ((score >= topMoveScore && isPlayer) || (score <= topMoveScore && !isPlayer))
+            for (int move = 0; move < moves.Length; move++)
             {
-                topMoveScore = score;
+                board.MakeMove(moves[move]);
+                Move[] newMoves = board.GetLegalMoves();
+                (int score, int moveNr) res = MiniMax(board, newMoves, depth - 1, !maximizing);
+                board.UndoMove(moves[move]);
+
+                if ((maximizing && res.score > topScore) || (!maximizing && res.score < topScore))
+                {
+                    topScore = res.score;
+                    topMove = move;
+                }
             }
+
         }
 
-        return topMoveScore;
+        Console.WriteLine($"{new String(' ', depth)}+[{depth}]{new String(' ', 5 - depth)}{topScore}");
+        return (topScore, topMove);
     }
 
-    int evaluateBoard(Board board)
+    int EvaluateBoard(Board board, bool blackPlayed)
     {
         int score = 0;
         for (int type = 0; type < pieceRewards.Length; type++)
         {
-            PieceList opPieceList = board.GetPieceList((PieceType)type, board.IsWhiteToMove);
-            PieceList myPieceList = board.GetPieceList((PieceType)type, !board.IsWhiteToMove);
+            PieceList opPieceList = board.GetPieceList((PieceType)type, !blackPlayed);
+            PieceList myPieceList = board.GetPieceList((PieceType)type, blackPlayed);
             int opLen = (opPieceList != null) ? opPieceList.Count : 0;
             int myLen = (myPieceList != null) ? myPieceList.Count : 0;
             score += pieceRewards[type] * (myLen - opLen);
